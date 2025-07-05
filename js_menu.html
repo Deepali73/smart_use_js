@@ -25,7 +25,7 @@
       box-shadow: 0 0 15px rgba(0,0,0,0.05);
       border-radius: 10px;
     }
-    select, input, button {
+    select, input, button, textarea {
       margin: 10px;
       padding: 12px;
       width: 90%;
@@ -75,6 +75,7 @@
 
 <main>
   <select id="actionMenu">
+    <option value="email">✉️ Send Email (ईमेल भेजो)</option>
     <option value="photo">📸 Capture Photo (फोटो खींचो)</option>
     <option value="video">🎥 Record Video (विडियो बनाओ)</option>
     <option value="whatsapp">💬 Send WhatsApp Message (व्हाट्सएप संदेश)</option>
@@ -82,199 +83,174 @@
     <option value="location">📍 Share Location via WhatsApp (लोकेशन भेजो)</option>
     <option value="grocery">🛒 Search Grocery Store (किराणा ढूंढो)</option>
     <option value="route">🗺️ Find Route (रास्ता देखो)</option>
+    <option value="upload">🚀 Upload File to Flask API</option>
   </select>
 
   <div id="formArea"></div>
   <div id="output"></div>
 
   <hr>
-
   <h3>🔍 Track Activity</h3>
   <input type="text" id="searchBox" placeholder="What are you looking for?" />
   <button onclick="trackSearch()">🔍 Search</button>
-  <div><a href="#" onclick="trackClick()">📎 Click this link</a></div>
+  <div><a href="#" onclick="trackClick()">📌 Click this link</a></div>
   <p><strong>🕒 Time spent on site:</strong> <span id="timer">0</span> seconds</p>
   <h4>📊 Live Log:</h4>
   <div id="logBox">Tracking started...</div>
 </main>
 
 <script>
-  const formArea = document.getElementById('formArea');
-  const output = document.getElementById('output');
-  const menu = document.getElementById('actionMenu');
-  let startTime = Date.now();
-  let clickCount = 0;
-  let searchStats = {};
+const formArea = document.getElementById('formArea');
+const output = document.getElementById('output');
+const menu = document.getElementById('actionMenu');
+let startTime = Date.now();
+let clickCount = 0;
+let searchStats = {};
+let mediaRecorder;
+let chunks = [];
 
-  setInterval(() => {
-    document.getElementById('timer').textContent = Math.floor((Date.now() - startTime) / 1000);
-  }, 1000);
+setInterval(() => {
+  document.getElementById('timer').textContent = Math.floor((Date.now() - startTime) / 1000);
+}, 1000);
 
-  async function getIPLocation() {
-    try {
-      const res = await fetch("https://ipapi.co/json/");
-      return await res.json();
-    } catch {
-      return { ip: "Unavailable", city: "Unknown", country: "Unknown" };
-    }
+async function getIPLocation() {
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    return await res.json();
+  } catch {
+    return { ip: "Unavailable", city: "Unknown", country: "Unknown" };
   }
+}
 
-  async function trackClick() {
-    clickCount++;
-    const loc = await getIPLocation();
-    const log = `🔗 Link clicked ${clickCount} time(s)\n🕒 ${new Date().toLocaleString()}\n📍 ${loc.city}, ${loc.country} (${loc.ip})\n\n`;
-    document.getElementById('logBox').textContent = log + document.getElementById('logBox').textContent;
+async function trackClick() {
+  clickCount++;
+  const loc = await getIPLocation();
+  const log = `🔗 Link clicked ${clickCount} time(s)\n🕒 ${new Date().toLocaleString()}\n📍 ${loc.city}, ${loc.country} (${loc.ip})\n\n`;
+  document.getElementById('logBox').textContent = log + document.getElementById('logBox').textContent;
+}
+
+async function trackSearch() {
+  const query = document.getElementById("searchBox").value.trim();
+  if (!query) return alert("Please type something to search.");
+  const loc = await getIPLocation();
+  searchStats[query] = (searchStats[query] || 0) + 1;
+  const log = `🔍 Searched: "${query}"\n🕒 ${new Date().toLocaleString()}\n📍 ${loc.city}, ${loc.country} (${loc.ip})\nTotal searches: ${searchStats[query]}\n\n`;
+  document.getElementById('logBox').textContent = log + document.getElementById('logBox').textContent;
+}
+
+menu.addEventListener('change', loadForm);
+window.onload = loadForm;
+
+function loadForm() {
+  const choice = menu.value;
+  formArea.innerHTML = '';
+  output.innerHTML = '';
+
+  if (choice === 'upload') {
+    formArea.innerHTML = `
+      <input type="file" id="fileInput" />
+      <button onclick="uploadToAPI()">🚀 Upload to Flask</button>
+    `;
+  } else if (choice === 'email') {
+    formArea.innerHTML = `
+      <input type="email" id="emailTo" placeholder="Recipient Email" required />
+      <input type="text" id="emailSubject" placeholder="Subject" required />
+      <textarea id="emailBody" placeholder="Type your message here..." rows="5"></textarea>
+      <button onclick="sendEmail()">📨 Send Email</button>
+    `;
+  } else if (choice === 'photo') {
+    formArea.innerHTML = `
+      <video id="video" autoplay></video><br>
+      <button onclick="capturePhoto()">📸 Capture</button>
+      <canvas id="canvas" style="display:none;"></canvas>
+    `;
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+      document.getElementById('video').srcObject = stream;
+    });
+  } else if (choice === 'video') {
+    formArea.innerHTML = `
+      <video id="recVideo" autoplay muted></video><br>
+      <button onclick="startRecording()">▶️ Start</button>
+      <button onclick="stopRecording()">⏹️ Stop</button>
+    `;
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+      document.getElementById('recVideo').srcObject = stream;
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+    });
   }
+}
 
-  async function trackSearch() {
-    const query = document.getElementById("searchBox").value.trim();
-    if (!query) return alert("Please type something to search.");
-    const loc = await getIPLocation();
-    searchStats[query] = (searchStats[query] || 0) + 1;
-    const log = `🔍 Searched: "${query}"\n🕒 ${new Date().toLocaleString()}\n📍 ${loc.city}, ${loc.country} (${loc.ip})\nTotal searches: ${searchStats[query]}\n\n`;
-    document.getElementById('logBox').textContent = log + document.getElementById('logBox').textContent;
+function uploadToAPI() {
+  const file = document.getElementById("fileInput").files[0];
+  if (!file) return alert("Please select a file first.");
+  const formData = new FormData();
+  formData.append("file", file);
+  fetch("/upload", {
+    method: "POST",
+    body: formData
+  }).then(res => res.json())
+    .then(result => alert("✅ Server response: " + result.message));
+}
+
+function sendEmail() {
+  const to = document.getElementById('emailTo').value;
+  const subject = encodeURIComponent(document.getElementById('emailSubject').value);
+  const body = encodeURIComponent(document.getElementById('emailBody').value);
+  if (to && subject && body) {
+    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+  } else {
+    alert("Please fill all fields.");
   }
+}
 
-  menu.addEventListener('change', loadForm);
-  window.onload = loadForm;
+function capturePhoto() {
+  const canvas = document.getElementById('canvas');
+  const video = document.getElementById('video');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  canvas.toBlob(blob => {
+    addSharingOptions(blob, "image");
+  });
+}
 
-  function loadForm() {
-    const choice = menu.value;
-    formArea.innerHTML = '';
-    output.innerHTML = '';
+function startRecording() {
+  chunks = [];
+  mediaRecorder.start();
+}
 
-    if (choice === 'photo') {
-      formArea.innerHTML = `
-        <video id="video" autoplay></video><br>
-        <button onclick="capturePhoto()">📸 Capture</button>
-        <a id="downloadLink" style="display:none;" download="captured.png">📥 Save Photo</a>
-        <canvas id="canvas" style="display:none;"></canvas>
-      `;
-      navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-        document.getElementById('video').srcObject = stream;
-      });
+function stopRecording() {
+  mediaRecorder.stop();
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(chunks, { type: 'video/webm' });
+    addSharingOptions(blob, "video");
+  };
+}
 
-    } else if (choice === 'video') {
-      formArea.innerHTML = `
-        <video id="recVideo" autoplay muted></video><br>
-        <button onclick="startRecording()">▶️ Start</button>
-        <button onclick="stopRecording()">⏹️ Stop</button>
-        <a id="videoDownload" style="display:none;" download="video.webm">📥 Save Video</a>
-      `;
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
-        document.getElementById('recVideo').srcObject = stream;
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
-        mediaRecorder.onstop = () => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          const url = URL.createObjectURL(blob);
-          const a = document.getElementById('videoDownload');
-          a.href = url;
-          a.style.display = 'inline-block';
-        };
-      });
+function addSharingOptions(blob, type = "image") {
+  const url = URL.createObjectURL(blob);
+  output.innerHTML = `
+    <a href="${url}" download="${type === 'image' ? 'photo.png' : 'video.webm'}">📅 Save ${type === 'image' ? 'Photo' : 'Video'}</a><br><br>
+    <button onclick="shareViaWhatsApp('${url}')">💬 Share via WhatsApp</button>
+    <button onclick="shareViaEmail('${url}')">✉️ Share via Email</button>
+  `;
+}
 
-    } else if (choice === 'whatsapp') {
-      formArea.innerHTML = `
-        <input id="waNumber" placeholder="Phone number (+91...)" />
-        <input id="waMessage" placeholder="Message" />
-        <button onclick="sendWhatsApp()">📤 Send</button>
-      `;
+function shareViaWhatsApp(url) {
+  const msg = encodeURIComponent(`Check this out: ${url}`);
+  const phone = prompt("Enter WhatsApp number (+91...):");
+  if (phone) window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
+}
 
-    } else if (choice === 'sms') {
-      formArea.innerHTML = `<p>⚠️ SMS sending requires backend integration (e.g., Twilio).</p>`;
-
-    } else if (choice === 'location') {
-      formArea.innerHTML = `
-        <button onclick="getLocation()">📍 Show My Location</button>
-        <div id="myLocation"></div>
-        <button id="shareBtn" style="display:none;" onclick="shareLocationWhatsApp()">📤 Share via WhatsApp</button>
-      `;
-
-    } else if (choice === 'grocery') {
-      window.open("https://www.google.com/maps/search/grocery+store+near+me", "_blank");
-
-    } else if (choice === 'route') {
-      formArea.innerHTML = `
-        <input id="src" placeholder="From" />
-        <input id="dest" placeholder="To" />
-        <button onclick="showRoute()">🗺️ Get Route</button>
-      `;
-    }
-  }
-
-  function capturePhoto() {
-    const canvas = document.getElementById('canvas');
-    const video = document.getElementById('video');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    const dataUrl = canvas.toDataURL("image/png");
-    const link = document.getElementById('downloadLink');
-    link.href = dataUrl;
-    link.style.display = 'inline-block';
-  }
-
-  let mediaRecorder;
-  let chunks = [];
-
-  function startRecording() {
-    chunks = [];
-    mediaRecorder.start();
-  }
-
-  function stopRecording() {
-    mediaRecorder.stop();
-  }
-
-  function sendWhatsApp() {
-    const phone = document.getElementById('waNumber').value;
-    const msg = encodeURIComponent(document.getElementById('waMessage').value);
-    if (phone && msg) {
-      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
-    } else {
-      alert("Please fill both phone and message.");
-    }
-  }
-
-  function getLocation() {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(pos => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-        const mapLink = `https://www.google.com/maps?q=${lat},${lon}`;
-        document.getElementById("myLocation").innerHTML = `
-          <p>📍 Latitude: ${lat}<br>📍 Longitude: ${lon}</p>
-          <p><a href="${mapLink}" target="_blank">🔗 View on Google Maps</a></p>
-        `;
-        document.getElementById("shareBtn").style.display = "inline-block";
-        window._lastLocation = mapLink;
-      }, err => {
-        output.innerHTML = `❌ Error: ${err.message}`;
-      });
-    } else {
-      output.innerHTML = `❌ Geolocation not supported by your browser.`;
-    }
-  }
-
-  function shareLocationWhatsApp() {
-    const phone = prompt("Enter WhatsApp number (+91...)");
-    if (phone && window._lastLocation) {
-      const msg = encodeURIComponent(`📍 Here's my current location: ${window._lastLocation}`);
-      window.open(`https://wa.me/${phone}?text=${msg}`, '_blank');
-    } else {
-      alert("Please first detect your location.");
-    }
-  }
-
-  function showRoute() {
-    const src = encodeURIComponent(document.getElementById('src').value);
-    const dest = encodeURIComponent(document.getElementById('dest').value);
-    if (src && dest) {
-      window.open(`https://www.google.com/maps/dir/${src}/${dest}`, "_blank");
-    }
-  }
+function shareViaEmail(url) {
+  const mailto = `mailto:?subject=Shared Media&body=Check this out: ${url}`;
+  window.location.href = mailto;
+}
 </script>
 
 </body>
 </html>
+
+
+
